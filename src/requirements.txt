@@ -4,3 +4,7 @@ python-dotenv
 python-multipart
 pydantic-settings
 aiofiles
+langchain
+PyMuPDF
+langchain_community
+langchain-text-splitters
