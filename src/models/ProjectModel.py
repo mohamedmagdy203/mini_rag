@@ -7,20 +7,36 @@ class ProjectModel(BaseDataModel):
         super().__init__(db_client)
         self.collection = self.db_client[DatabaseEnum.COLLECTION_PROJECTS_NAME.value]
         
-    async def create_project(self,project:project):
-        result=await self.collection.insert_one(project.dict(by_alias=True,exclude_unset=True))
-        project._id=result.inserted_id
+    @classmethod
+    async def create_instance(cls, db_client:object):
+        instance=cls(db_client)
+        await instance.init_collection()
+        return instance
 
-        return project
+    async def init_collection(self):
+        all_collection=await self.db_client.list_collection_names()
+        if DatabaseEnum.COLLECTION_PROJECTS_NAME.value not in all_collection:
+            self.collection = self.db_client[DatabaseEnum.COLLECTION_PROJECTS_NAME.value]
+            indexes=project.get_indexes()
+            for index in indexes:
+                await self.collection.create_index(index["key"], name=index["name"], unique=index.get("unique", False), background=True)
 
-    async def get_project_or_create_one(self, project_id:str):
-        record=await self.collection.find_one({"_id":project_id})
+# ...existing code...
+    async def get_project_or_create_one(self, project_id: str):
+
+        record = await self.collection.find_one({
+            "project_id": project_id
+        })
+
         if record is None:
-            projects = project(project_id=project_id)
-            projects = await self.create_project(project=projects)
-            return projects
+            # create new project
+            Project = project(project_id=project_id)
+            Project = await self.create_project(project=Project)
 
-        return project(**record)
+            return Project
+
+        return project(**record)  # تعديل هنا
+# ...existing code...
 
     async def get_all_projects(self,page:int=1,page_size:int=10):
         
