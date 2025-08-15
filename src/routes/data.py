@@ -7,9 +7,12 @@ from controllers import DataController,ProcessController,ProjectControllers
 import aiofiles
 from models import ResponseSignal
 from models.db_schemas.data_chunk import DataChunk
+from models.db_schemas.asset import Asset
 from .schemas.data import ProcessRequest
 from models.ProjectModel import ProjectModel
 from models.ChunkModel import ChunkModel
+from models.AssetModel import AssetModel
+from models.enums.AssetTypeEnums import AssetTypeEnums
 from bson import ObjectId
 
 data_router = APIRouter(prefix="/api/v1/data",tags=['api_v1','data'])
@@ -19,7 +22,7 @@ data_router = APIRouter(prefix="/api/v1/data",tags=['api_v1','data'])
 async def upload_data(request:Request,project_id:str,file:UploadFile,
                     app_settings:settings=Depends(get_settings)):
 
-    project_model = ProjectModel(db_client=request.app.db_client)
+    project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
 
     project=await project_model.get_project_or_create_one(project_id=project_id)
 
@@ -37,15 +40,35 @@ async def upload_data(request:Request,project_id:str,file:UploadFile,
         project_id=project_id
     )
 
-    async with aiofiles.open(file_path, 'wb') as out_file:
-        while chunk:=await file.read(app_settings.FILE_DEFAULT_CHUNK_SIZE):
-            await out_file.write(chunk)
-            
+    try:
+        async with aiofiles.open(file_path, 'wb') as out_file:
+            while chunk:=await file.read(app_settings.FILE_DEFAULT_CHUNK_SIZE):
+                await out_file.write(chunk)
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": ResponseSignal.FILE_UPLOAD_FAILED.value, "details": str(e)}
+        )
+        
+    # store the assets into the database
+    asset_model = await AssetModel.create_instance(db_client=request.app.db_client)
+
+    asset_resource=Asset(
+        asset_project_id=project.id,
+        asset_type=AssetTypeEnums.FILE.value,
+        asset_name=file_id,
+        asset_size=os.path.getsize(file_path)
+    )
+    
+    asset_record=await asset_model.create_asset(asset=asset_resource)
+    
+
     return JSONResponse(
         content={
             'signal': ResponseSignal.FILE_UPLOAD_SUCCESS.value,
-            'file_id': file_id,
-            'project_id':str(project._id),
+            'file_id': str(asset_record.id),
+            'project_id': str(project.id),
         }
     )
     
@@ -57,7 +80,7 @@ async def process_endpoint(requests: Request, project_id: str, process_request: 
     file_chunk_overlap = process_request.chunk_overlap
     do_reset = process_request.do_reset
 
-    project_model = ProjectModel(db_client=requests.app.db_client)
+    project_model = await ProjectModel.create_instance(db_client=requests.app.db_client)
     project = await project_model.get_project_or_create_one(project_id=project_id)
 
     process_controller = ProcessController(project_id=project_id)
@@ -81,21 +104,22 @@ async def process_endpoint(requests: Request, project_id: str, process_request: 
             chunk_text=chunk.page_content,
             chunk_metadata=chunk.metadata,
             chunk_order=i + 1,
-            chunk_project_id=project._id,
+            chunk_project_id=project.id,
         )
         for i, chunk in enumerate(file_chunks)
     ]
 
-    chunk_model = ChunkModel(db_client=requests.app.db_client)
+    chunk_model = await ChunkModel.create_instance(db_client=requests.app.db_client)
 
     if do_reset:
-        await chunk_model.delete_chunk_by_project_id(project_id=project._id)
+        await chunk_model.delete_chunk_by_project_id(project_id=project.id)
 
     no_records = await chunk_model.insert_many_chunks(chunks=file_chunks_records)
 
     return JSONResponse(
         content={
-            "signal": ResponseSignal.FILE_PROCESS_SUCCESS.value,
-            "inserted_chunks": no_records
+            'signal': ResponseSignal.FILE_UPLOAD_SUCCESS.value,
+            'file_id': file_id,
+            'project_id': str(project.id),
         }
     )

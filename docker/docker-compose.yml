@@ -5,10 +5,17 @@ services:
     ports:
       - "27007:27017"
     volumes:
-      - ./mongodb_data:/data/db
+      - mongodata:/data/db
+
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
     networks:
       - backend_network
     restart: always
 
 networks:
   backend_network:
+
+volumes:
+  mongodata:
