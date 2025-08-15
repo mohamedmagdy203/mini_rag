@@ -7,9 +7,12 @@ from controllers import DataController,ProcessController,ProjectControllers
 import aiofiles
 from models import ResponseSignal
 from models.db_schemas.data_chunk import DataChunk
+from models.db_schemas.asset import Asset
 from .schemas.data import ProcessRequest
 from models.ProjectModel import ProjectModel
 from models.ChunkModel import ChunkModel
+from models.AssetModel import AssetModel
+from models.enums.AssetTypeEnums import AssetTypeEnums
 from bson import ObjectId
 
 data_router = APIRouter(prefix="/api/v1/data",tags=['api_v1','data'])
@@ -37,15 +40,35 @@ async def upload_data(request:Request,project_id:str,file:UploadFile,
         project_id=project_id
     )
 
-    async with aiofiles.open(file_path, 'wb') as out_file:
-        while chunk:=await file.read(app_settings.FILE_DEFAULT_CHUNK_SIZE):
-            await out_file.write(chunk)
-            
+    try:
+        async with aiofiles.open(file_path, 'wb') as out_file:
+            while chunk:=await file.read(app_settings.FILE_DEFAULT_CHUNK_SIZE):
+                await out_file.write(chunk)
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": ResponseSignal.FILE_UPLOAD_FAILED.value, "details": str(e)}
+        )
+        
+    # store the assets into the database
+    asset_model = await AssetModel.create_instance(db_client=request.app.db_client)
+
+    asset_resource=Asset(
+        asset_project_id=project.id,
+        asset_type=AssetTypeEnums.FILE.value,
+        asset_name=file_id,
+        asset_size=os.path.getsize(file_path)
+    )
+    
+    asset_record=await asset_model.create_asset(asset=asset_resource)
+    
+
     return JSONResponse(
         content={
             'signal': ResponseSignal.FILE_UPLOAD_SUCCESS.value,
-            'file_id': file_id,
-            'project_id':str(project.id),
+            'file_id': str(asset_record.id),
+            'project_id': str(project.id),
         }
     )
     

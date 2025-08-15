@@ -21,7 +21,13 @@ class ProjectModel(BaseDataModel):
             for index in indexes:
                 await self.collection.create_index(index["key"], name=index["name"], unique=index.get("unique", False), background=True)
 
-# ...existing code...
+
+    async def create_project(self, project:project):
+        result=await self.collection.insert_one(project.dict(by_alias=True,exclude_unset=True))
+        project.id = str(result.inserted_id)
+        return project
+
+        
     async def get_project_or_create_one(self, project_id: str):
 
         record = await self.collection.find_one({
@@ -29,14 +35,12 @@ class ProjectModel(BaseDataModel):
         })
 
         if record is None:
-            # create new project
             Project = project(project_id=project_id)
             Project = await self.create_project(project=Project)
 
             return Project
 
-        return project(**record)  # تعديل هنا
-# ...existing code...
+        return project(**record)  
 
     async def get_all_projects(self,page:int=1,page_size:int=10):
         
