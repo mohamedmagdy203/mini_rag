@@ -8,3 +8,4 @@ langchain
 PyMuPDF
 langchain_community
 langchain-text-splitters
+motor
